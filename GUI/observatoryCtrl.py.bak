@@ -1,0 +1,112 @@
+# -*- coding: utf-8 -*-
+"""
+Monitor and Control of krx43.
+GUI to provide control for the 4-ch K-band front end, down-converter and the backend.
+"""
+import sys, warnings
+#load spectrometer related libs
+from PyQt5 import QtCore, QtGui
+from PyQt5.QtCore import QObject, pyqtSignal
+
+from MCClient import GUI
+from MCClient.GUI.dataset_writer import write_datasets
+
+debug = 0
+
+#Step 1 is to load all the system parameters to intialise the GUI to.
+class XStream(QObject):
+    _stdout = None
+    _stderr = None
+    messageWritten = pyqtSignal(str)
+
+    def flush( self ):
+        pass
+
+    def fileno( self ):
+        return -1
+
+    def write( self, msg ):
+        if ( not self.signalsBlocked() ):
+            self.messageWritten.emit(unicode(msg))
+
+    @staticmethod
+    def stdout():
+        if ( not XStream._stdout ):
+            XStream._stdout = XStream()
+            sys.stdout = XStream._stdout
+        return XStream._stdout
+
+    @staticmethod
+    def stderr():
+        if ( not XStream._stderr ):
+            XStream._stderr = XStream()
+            sys.stderr = XStream._stderr
+        return XStream._stderr
+
+class observatoryGUI(QtGui.QMainWindow,):
+    """
+    GUI for controlling krx43, ROACH, and analysis related functions.
+    Also defines some simple functions and thread controls.
+    """
+    def __init__(self, parent=None):
+        """Initialises GUI parameters"""
+        QtGui.QMainWindow.__init__(self, parent)
+        self.ui = GUI.Ui_Observatory()
+        self.ui.setupUi(self)
+
+        self.QMainWindow = QtGui.QMainWindow(self)
+        self.main_widget = QtGui.QWidget(self)
+        #Remove tabs that are not necessary for cut down GUI!!!
+        self.ui.Ctrl_Tabs.removeTab(7)
+        self.ui.Ctrl_Tabs.removeTab(6)
+        self.ui.Ctrl_Tabs.removeTab(5)
+        self.ui.Ctrl_Tabs.removeTab(4)
+        #Fixed indicators/configurations for TAMS
+        #Subreflector is always mid position
+        self.ui.kled_12.off()
+        self.ui.kled_14.off()
+        self.ui.kled_17.on()
+        self.ui.kled_1.off()
+        self.ui.kled_2.off()
+        self.ui.kled_3.off()
+        self.ui.kled_4.off()
+
+        #Main window title
+        self.setWindowTitle("DSS43 K-Band Observatory")
+        self.__connect()
+
+    def __connect(self):
+        """
+        Connections to signals/slots for GUImade here along with the timer definition of 1 sec interval
+        for GUI LCD updates.
+        """
+        QtCore.QObject.connect(self.ui.actionQuit, QtCore.SIGNAL('triggered()'), self.exit_clean)
+        self.thread_group_start()
+
+    def thread_group_start(self):
+        """Thread collection defined in separate file"""
+        self.write_dataset  =  write_datasets(self.ui)
+        self.write_dataset.start()
+
+    def keyPressEvent(self, e):
+        """Manage key events"""
+        if e.key() == QtCore.Qt.Key_Escape:
+            #self.exit_clean()
+            warnings.warn('Escape pressed...no functions defined for escape key.')
+            self.wbdc_log.info("Escape pressed...no functions defined for escape key.")
+
+    def exit_clean(self):
+        """Stop all threads and exit cleanly"""
+        self.close()
+        #flush the logs
+#        self.fh.flush()
+#        self.sh.flush()
+
+    def close(self):
+        self.write_dataset.apcInfo.close()
+        
+#debug = diag = False # True #
+app = QtGui.QApplication(sys.argv)
+GUI = observatoryGUI()
+if not debug: GUI.show()
+sys.exit(app.exec_())
